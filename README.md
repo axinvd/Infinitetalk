@@ -3,7 +3,7 @@
 
 This project is a template designed to easily deploy and use [InfiniteTalk](https://github.com/Kijai/InfiniteTalk) in the RunPod Serverless environment.
 
-[![Runpod](https://api.runpod.io/badge/wlsdml1114/InfiniteTalk_Runpod_hub)](https://console.runpod.io/hub/wlsdml1114/InfiniteTalk_Runpod_hub)
+[![Runpod](https://api.runpod.io/badge/llmer/Infinitetalk_Runpod_hub)](https://console.runpod.io/hub/llmer/Infinitetalk_Runpod_hub)
 
 InfiniteTalk is an AI model that takes a single portrait image and speech audio as input to generate natural lip-sync videos with infinite talking capabilities.
 
