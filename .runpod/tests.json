@@ -6,7 +6,7 @@
         "input_type": "image",
         "person_count": "single",
         "prompt": "A person talking naturally",
-        "max_frame": 8,
+        "max_frame": 25,
         "force_offload": false,
         "network_volume": true
       },

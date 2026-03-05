@@ -33,6 +33,7 @@ server_address = os.getenv("SERVER_ADDRESS", "127.0.0.1")
 client_id = str(uuid.uuid4())
 RESULT_CACHE_DIR = "/tmp/runpod_job_cache"
 MULTITALK_MIN_LOUDNESS_SECONDS = float(os.getenv("MULTITALK_MIN_LOUDNESS_SECONDS", "0.45"))
+MIN_MAX_FRAME = int(os.getenv("MIN_MAX_FRAME", "25"))
 
 
 def get_request_key(job):
@@ -46,6 +47,40 @@ def get_request_key(job):
     if not request_id:
         return None
     return re.sub(r"[^A-Za-z0-9_.-]", "_", str(request_id))
+
+
+def _is_valid_http_url(url):
+    """Return True only for real http(s) URLs, not placeholders like PING_NOT_SET."""
+    if not url:
+        return False
+    text = str(url).strip()
+    if not text or text.upper() == "PING_NOT_SET":
+        return False
+    parsed = urllib.parse.urlparse(text)
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+def _clamp_max_frame(max_frame):
+    """Ensure max_frame is an integer at or above MIN_MAX_FRAME."""
+    try:
+        value = int(max_frame)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid max_frame=%r; falling back to MIN_MAX_FRAME=%d",
+            max_frame,
+            MIN_MAX_FRAME,
+        )
+        return MIN_MAX_FRAME
+
+    if value < MIN_MAX_FRAME:
+        logger.warning(
+            "max_frame=%d is too low; clamping to MIN_MAX_FRAME=%d",
+            value,
+            MIN_MAX_FRAME,
+        )
+        return MIN_MAX_FRAME
+
+    return value
 
 
 def get_cache_paths(request_key):
@@ -231,15 +266,26 @@ def get_videos(ws, prompt, input_type="image", person_count="single", job=None):
     # Background heartbeat to prevent stale job requeue during silent phases
     # (model loading, first sampling step) where ComfyUI sends no WebSocket messages
     heartbeat_stop = threading.Event()
+    ping_url = os.environ.get("RUNPOD_WEBHOOK_PING")
+    direct_heartbeat_enabled = _is_valid_http_url(ping_url)
+
+    if direct_heartbeat_enabled:
+        logger.info("Direct sidecar heartbeat enabled")
+    else:
+        logger.info(
+            "Direct sidecar heartbeat disabled (RUNPOD_WEBHOOK_PING is missing or invalid: %r)",
+            ping_url,
+        )
 
     def heartbeat():
         hb = None
-        try:
-            from runpod.serverless.modules.rp_ping import Heartbeat
-            hb = Heartbeat()
-            logger.info("Direct sidecar heartbeat initialized")
-        except Exception as e:
-            logger.warning(f"Could not init direct heartbeat: {e}")
+        if direct_heartbeat_enabled:
+            try:
+                from runpod.serverless.modules.rp_ping import Heartbeat
+                hb = Heartbeat()
+                logger.info("Direct sidecar heartbeat initialized")
+            except Exception as e:
+                logger.warning(f"Could not init direct heartbeat: {e}")
 
         while not heartbeat_stop.wait(8):
             # Direct sidecar ping (may prevent stale requeue)
@@ -539,6 +585,7 @@ def handler(job):
         )
     else:
         logger.info(f"User-specified max_frame: {max_frame}")
+    max_frame = _clamp_max_frame(max_frame)
 
     logger.info(f"Workflow config: prompt='{prompt_text}', width={width}, height={height}, max_frame={max_frame}")
     logger.info(f"Media path: {media_path}")
