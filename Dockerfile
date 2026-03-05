@@ -1,8 +1,10 @@
 # Stage 1: Download models in parallel (runs concurrently with stage 2 via BuildKit)
 FROM debian:bookworm-slim AS models
-RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certificates python3 python3-pip && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certificates python3 python3-pip python3-venv && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /models/diffusion_models /models/loras /models/vae /models/text_encoders /models/clip_vision /models/transformers/TencentGameMate/chinese-wav2vec2-base
-RUN python3 -m pip install --no-cache-dir "huggingface_hub[hf_transfer]"
+RUN python3 -m venv /opt/models-venv
+RUN /opt/models-venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/models-venv/bin/pip install --no-cache-dir "huggingface_hub[hf_transfer]"
 # Commented-out GGUF models preserved for reference
 # wget -q https://huggingface.co/Kijai/WanVideo_comfy_GGUF/resolve/main/InfiniteTalk/Wan2_1-InfiniteTalk_Single_Q8.gguf -O /models/diffusion_models/Wan2_1-InfiniteTalk_Single_Q8.gguf
 # wget -q https://huggingface.co/Kijai/WanVideo_comfy_GGUF/resolve/main/InfiniteTalk/Wan2_1-InfiniteTalk_Multi_Q8.gguf -O /models/diffusion_models/Wan2_1-InfiniteTalk_Multi_Q8.gguf
@@ -26,7 +28,7 @@ RUN wget -q https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/
       /models/clip_vision/clip_vision_h.safetensors \
       /models/diffusion_models/MelBandRoformer_fp16.safetensors; \
     do [ -s "$f" ] || { echo "FAILED: $f is missing or empty"; exit 1; }; done
-RUN python3 - <<'PY'
+RUN /opt/models-venv/bin/python - <<'PY'
 from huggingface_hub import snapshot_download
 
 snapshot_download(
