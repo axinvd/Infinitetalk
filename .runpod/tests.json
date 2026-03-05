@@ -5,7 +5,10 @@
       "input": {
         "input_type": "image",
         "person_count": "single",
-        "prompt": "A person talking naturally"
+        "prompt": "A person talking naturally",
+        "max_frame": 8,
+        "force_offload": false,
+        "network_volume": true
       },
       "timeout": 600000
     }

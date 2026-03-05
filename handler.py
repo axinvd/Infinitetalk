@@ -5,6 +5,7 @@ import base64
 import json
 import uuid
 import logging
+import sys
 import urllib.request
 import urllib.parse
 import binascii
@@ -12,8 +13,10 @@ import subprocess
 import threading
 import librosa
 import shutil
+import time
+import re
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +31,75 @@ def truncate_base64_for_log(base64_str, max_length=50):
 
 server_address = os.getenv("SERVER_ADDRESS", "127.0.0.1")
 client_id = str(uuid.uuid4())
+RESULT_CACHE_DIR = "/tmp/runpod_job_cache"
+
+
+def get_request_key(job):
+    """Extract a stable request identifier for idempotent retries."""
+    request_id = (
+        job.get("id")
+        or job.get("requestId")
+        or job.get("request_id")
+        or job.get("uid")
+    )
+    if not request_id:
+        return None
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(request_id))
+
+
+def get_cache_paths(request_key):
+    base_path = os.path.join(RESULT_CACHE_DIR, request_key)
+    return {
+        "meta": f"{base_path}.json",
+        "video": f"{base_path}.mp4",
+    }
+
+
+def save_cached_video(request_key, source_video_path):
+    """Persist a copy of the generated video for idempotent retries."""
+    if not request_key:
+        return
+    try:
+        os.makedirs(RESULT_CACHE_DIR, exist_ok=True)
+        paths = get_cache_paths(request_key)
+        temp_video_path = f"{paths['video']}.tmp"
+        shutil.copy2(source_video_path, temp_video_path)
+        os.replace(temp_video_path, paths["video"])
+        with open(paths["meta"], "w") as f:
+            json.dump(
+                {
+                    "request_key": request_key,
+                    "video_path": paths["video"],
+                },
+                f,
+            )
+        logger.info(f"Saved idempotency cache for request_key={request_key}")
+    except Exception as e:
+        logger.warning(f"Failed to save idempotency cache ({request_key}): {e}")
+
+
+def load_cached_result(request_key, use_network_volume):
+    """Return cached output for requeued jobs if available."""
+    if not request_key:
+        return None
+
+    paths = get_cache_paths(request_key)
+    if not os.path.exists(paths["meta"]) or not os.path.exists(paths["video"]):
+        return None
+
+    if use_network_volume:
+        network_volume_dir = "/runpod-volume"
+        if os.path.isdir(network_volume_dir):
+            output_path = os.path.join(network_volume_dir, f"infinitetalk_{request_key}.mp4")
+            shutil.copy2(paths["video"], output_path)
+            logger.info(f"Returning cached network volume video for request_key={request_key}")
+            return {"video_path": output_path}
+        logger.warning("network_volume requested but /runpod-volume is unavailable; using base64")
+
+    with open(paths["video"], "rb") as f:
+        video_data = base64.b64encode(f.read()).decode("utf-8")
+    logger.info(f"Returning cached base64 video for request_key={request_key}")
+    return {"video": video_data}
 
 
 def download_file_from_url(url, output_path):
@@ -291,6 +363,8 @@ def calculate_max_frames_from_audio(wav_path, wav_path_2=None, fps=25):
 
 def handler(job):
     job_input = job.get("input", {})
+    use_network_volume = job_input.get("network_volume", False)
+    request_key = get_request_key(job)
 
     log_input = job_input.copy()
     for key in ["image_base64", "video_base64", "wav_base64", "wav_base64_2"]:
@@ -298,6 +372,13 @@ def handler(job):
             log_input[key] = truncate_base64_for_log(log_input[key])
 
     logger.info(f"Received job input: {log_input}")
+    if request_key:
+        logger.info(f"Request key: {request_key}")
+        cached_result = load_cached_result(request_key, use_network_volume)
+        if cached_result is not None:
+            logger.info(f"Idempotent cache hit for request_key={request_key}")
+            return cached_result
+
     task_id = f"task_{uuid.uuid4()}"
 
     input_type = job_input.get("input_type", "image")
@@ -481,8 +562,6 @@ def handler(job):
     ws = websocket.WebSocket()
     max_attempts = int(180 / 5)
     for attempt in range(max_attempts):
-        import time
-
         try:
             ws.connect(ws_url)
             ws.settimeout(120)
@@ -516,13 +595,14 @@ def handler(job):
         logger.error(f"Output video file does not exist: {output_video_path}")
         return {"error": f"Video file not found: {output_video_path}"}
 
-    use_network_volume = job_input.get("network_volume", False)
+    save_cached_video(request_key, output_video_path)
     logger.info(f"Use network volume: {use_network_volume}")
 
-    if use_network_volume:
+    if use_network_volume and os.path.isdir("/runpod-volume"):
         logger.info("Copying video to network volume")
         try:
-            output_filename = f"infinitetalk_{task_id}.mp4"
+            output_suffix = request_key or task_id
+            output_filename = f"infinitetalk_{output_suffix}.mp4"
             output_path = f"/runpod-volume/{output_filename}"
             logger.info(f"Source: {output_video_path}")
             logger.info(f"Destination: {output_path}")
@@ -546,26 +626,28 @@ def handler(job):
         except Exception as e:
             logger.error(f"Video copy failed: {e}")
             return {"error": f"Video copy failed: {e}"}
-    else:
-        runpod.serverless.progress_update(job, "Encoding video output...")
-        logger.info("Starting base64 encoding")
-        logger.info(f"Video file path: {output_video_path}")
+    elif use_network_volume:
+        logger.warning("network_volume requested but /runpod-volume is unavailable; using base64")
 
-        try:
-            file_size = os.path.getsize(output_video_path)
-            logger.info(f"Source file size: {file_size} bytes")
+    runpod.serverless.progress_update(job, "Encoding video output...")
+    logger.info("Starting base64 encoding")
+    logger.info(f"Video file path: {output_video_path}")
 
-            with open(output_video_path, "rb") as f:
-                video_data = base64.b64encode(f.read()).decode("utf-8")
+    try:
+        file_size = os.path.getsize(output_video_path)
+        logger.info(f"Source file size: {file_size} bytes")
 
-            encoded_size = len(video_data)
-            logger.info(f"Base64 encoding complete: {encoded_size} chars")
-            logger.info(f"Returning base64 video: {truncate_base64_for_log(video_data)}")
-            return {"video": video_data}
+        with open(output_video_path, "rb") as f:
+            video_data = base64.b64encode(f.read()).decode("utf-8")
 
-        except Exception as e:
-            logger.error(f"Base64 encoding failed: {e}")
-            return {"error": f"Base64 encoding failed: {e}"}
+        encoded_size = len(video_data)
+        logger.info(f"Base64 encoding complete: {encoded_size} chars")
+        logger.info(f"Returning base64 video: {truncate_base64_for_log(video_data)}")
+        return {"video": video_data}
+
+    except Exception as e:
+        logger.error(f"Base64 encoding failed: {e}")
+        return {"error": f"Base64 encoding failed: {e}"}
 
 
 runpod.serverless.start({"handler": handler})
