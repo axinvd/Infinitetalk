@@ -32,6 +32,7 @@ def truncate_base64_for_log(base64_str, max_length=50):
 server_address = os.getenv("SERVER_ADDRESS", "127.0.0.1")
 client_id = str(uuid.uuid4())
 RESULT_CACHE_DIR = "/tmp/runpod_job_cache"
+MULTITALK_MIN_LOUDNESS_SECONDS = float(os.getenv("MULTITALK_MIN_LOUDNESS_SECONDS", "0.45"))
 
 
 def get_request_key(job):
@@ -376,6 +377,54 @@ def calculate_max_frames_from_audio(wav_path, wav_path_2=None, fps=25):
     return max_frames
 
 
+def _resolve_node_fps(prompt, fps_input, default_fps=25.0):
+    """Resolve fps from a literal value or linked node input."""
+    if isinstance(fps_input, (int, float)):
+        return float(fps_input)
+
+    if isinstance(fps_input, list) and fps_input:
+        source_node_id = str(fps_input[0])
+        source_node = prompt.get(source_node_id, {})
+        source_value = source_node.get("inputs", {}).get("value")
+        if isinstance(source_value, (int, float)):
+            return float(source_value)
+
+    return float(default_fps)
+
+
+def maybe_disable_short_audio_loudness_norm(prompt, max_frame):
+    """
+    Disable MultiTalk loudness normalization for very short segments.
+
+    pyloudnorm requires signal length strictly greater than its block size.
+    For short frame windows (for example, max_frame=8 at 25fps), loudness
+    normalization raises ValueError and fails the workflow.
+    """
+    if max_frame is None:
+        return
+
+    for node_id, node in prompt.items():
+        if node.get("class_type") != "MultiTalkWav2VecEmbeds":
+            continue
+
+        inputs = node.get("inputs", {})
+        if not inputs.get("normalize_loudness", False):
+            continue
+
+        fps_value = _resolve_node_fps(prompt, inputs.get("fps"), default_fps=25.0)
+        min_frames = int(fps_value * MULTITALK_MIN_LOUDNESS_SECONDS) + 1
+
+        if max_frame < min_frames:
+            inputs["normalize_loudness"] = False
+            logger.warning(
+                "Disabled normalize_loudness on node %s (max_frame=%s < min_frames=%s at %.2ffps)",
+                node_id,
+                max_frame,
+                min_frames,
+                fps_value,
+            )
+
+
 def handler(job):
     logger.info(f"RunPod SDK v{runpod.__version__}")
     logger.info(f"RUNPOD_WEBHOOK_PING: {'SET' if os.environ.get('RUNPOD_WEBHOOK_PING') else 'NOT SET'}")
@@ -548,6 +597,7 @@ def handler(job):
 
     prompt["270"]["inputs"]["value"] = max_frame
     prompt["192"]["inputs"]["frame_window_size"] = max_frame
+    maybe_disable_short_audio_loudness_norm(prompt, max_frame)
 
     if person_count == "multi":
         if input_type == "image":
