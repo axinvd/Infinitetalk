@@ -9,6 +9,7 @@ import urllib.request
 import urllib.parse
 import binascii
 import subprocess
+import threading
 import librosa
 import shutil
 
@@ -154,40 +155,56 @@ def get_videos(ws, prompt, input_type="image", person_count="single", job=None):
     prompt_id = queue_prompt(prompt, input_type, person_count)["prompt_id"]
     logger.info(f"Workflow execution started: prompt_id={prompt_id}")
 
+    # Background heartbeat to prevent stale job requeue during silent phases
+    # (model loading, first sampling step) where ComfyUI sends no WebSocket messages
+    heartbeat_stop = threading.Event()
+
+    def heartbeat():
+        while not heartbeat_stop.wait(10):
+            if job:
+                runpod.serverless.progress_update(job, "Processing...")
+
+    heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+    heartbeat_thread.start()
+
     output_videos = {}
-    while True:
-        try:
-            out = ws.recv()
-        except websocket.WebSocketTimeoutException:
-            logger.error("WebSocket recv timed out (120s) — ComfyUI may be unresponsive")
-            raise Exception("WebSocket timeout: no message from ComfyUI for 120 seconds")
-        except (websocket.WebSocketConnectionClosedException, ConnectionError) as e:
-            logger.error(f"WebSocket disconnected: {e}")
-            raise Exception(f"WebSocket disconnected: {e}")
-        if isinstance(out, str):
-            message = json.loads(out)
-            if message["type"] == "executing":
-                data = message["data"]
-                if data["node"] is not None:
-                    logger.info(f"Executing node: {data['node']}")
+    try:
+        while True:
+            try:
+                out = ws.recv()
+            except websocket.WebSocketTimeoutException:
+                logger.error("WebSocket recv timed out (120s) — ComfyUI may be unresponsive")
+                raise Exception("WebSocket timeout: no message from ComfyUI for 120 seconds")
+            except (websocket.WebSocketConnectionClosedException, ConnectionError) as e:
+                logger.error(f"WebSocket disconnected: {e}")
+                raise Exception(f"WebSocket disconnected: {e}")
+            if isinstance(out, str):
+                message = json.loads(out)
+                if message["type"] == "executing":
+                    data = message["data"]
+                    if data["node"] is not None:
+                        logger.info(f"Executing node: {data['node']}")
+                        if job:
+                            runpod.serverless.progress_update(job, f"Executing node: {data['node']}")
+                    if data["node"] is None and data["prompt_id"] == prompt_id:
+                        logger.info("Workflow execution complete")
+                        break
+                elif message["type"] == "progress":
+                    data = message["data"]
                     if job:
-                        runpod.serverless.progress_update(job, f"Executing node: {data['node']}")
-                if data["node"] is None and data["prompt_id"] == prompt_id:
-                    logger.info("Workflow execution complete")
-                    break
-            elif message["type"] == "progress":
-                data = message["data"]
-                if job:
-                    runpod.serverless.progress_update(
-                        job, f"Node {data.get('node', '?')}: {data['value']}/{data['max']}"
-                    )
-            elif message["type"] == "execution_error":
-                error_data = message.get("data", {})
-                error_msg = f"ComfyUI execution error: {error_data}"
-                logger.error(error_msg)
-                raise Exception(error_msg)
-        else:
-            continue
+                        runpod.serverless.progress_update(
+                            job, f"Node {data.get('node', '?')}: {data['value']}/{data['max']}"
+                        )
+                elif message["type"] == "execution_error":
+                    error_data = message.get("data", {})
+                    error_msg = f"ComfyUI execution error: {error_data}"
+                    logger.error(error_msg)
+                    raise Exception(error_msg)
+            else:
+                continue
+    finally:
+        heartbeat_stop.set()
+        heartbeat_thread.join(timeout=2)
 
     logger.info(f"Fetching history: prompt_id={prompt_id}")
     history = get_history(prompt_id)[prompt_id]
