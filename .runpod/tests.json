@@ -14,8 +14,8 @@
     }
   ],
   "config": {
-    "gpuTypeId": "NVIDIA GeForce RTX 5090",
+    "gpuTypeId": "NVIDIA A100-SXM4-80GB",
     "gpuCount": 1,
-    "allowedCudaVersions": ["12.8"]
+    "allowedCudaVersions": ["12.4", "12.6", "12.8"]
   }
 }

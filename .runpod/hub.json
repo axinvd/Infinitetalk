@@ -10,8 +10,10 @@
       "containerDiskInGb": 280,
   
       "gpuCount": 1,
-      "gpuIds": "NVIDIA GeForce RTX 5090",
+      "gpuIds": "NVIDIA A100 80GB PCIe,NVIDIA A100-SXM4-80GB,NVIDIA H100 80GB HBM3,NVIDIA H100 PCIe",
       "allowedCudaVersions": [
+        "12.4",
+        "12.6",
         "12.8"
       ]
     }

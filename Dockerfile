@@ -41,10 +41,54 @@ RUN test -s /models/transformers/TencentGameMate/chinese-wav2vec2-base/pytorch_m
     (echo "FAILED: wav2vec model download missing" && exit 1)
 
 # Stage 2: Build runtime with ComfyUI + custom nodes
-FROM wlsdml1114/engui_genai-base_blackwell:1.1 AS runtime
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04 AS runtime
 
-RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+# Remove any third-party apt sources to avoid issues with expiring keys.
+RUN rm -f /etc/apt/sources.list.d/*.list
 
+SHELL ["/bin/bash", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV SHELL=/bin/bash
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH="/usr/local/cuda/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
+
+# Target A100 (sm_80) + H100 (sm_90) architectures
+ENV TORCH_CUDA_ARCH_LIST="8.0;9.0"
+
+# System packages (from base.Dockerfile)
+RUN apt-get update --yes && \
+    apt-get upgrade --yes && \
+    apt install --yes --no-install-recommends git wget curl bash libgl1 software-properties-common openssh-server nginx rsync ffmpeg && \
+    apt-get install --yes --no-install-recommends build-essential libssl-dev libffi-dev libxml2-dev libxslt1-dev zlib1g-dev git-lfs && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt install python3.10-dev python3.10-venv -y --no-install-recommends && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+
+# Python 3.10 + pip
+RUN ln -s /usr/bin/python3.10 /usr/bin/python && \
+    rm /usr/bin/python3 && \
+    ln -s /usr/bin/python3.10 /usr/bin/python3 && \
+    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
+    python get-pip.py
+
+RUN pip install -U wheel setuptools packaging
+
+# PyTorch + xformers (CUDA 12.8)
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+RUN pip install xformers --index-url https://download.pytorch.org/whl/cu128
+
+# flash_attn compiled for A100 + H100 (inherits TORCH_CUDA_ARCH_LIST)
+RUN pip install ninja && pip install flash_attn --no-build-isolation
+
+# Additional deps from base image
+RUN pip install misaki[en] psutil packaging transformers==4.48.2
+
+# Runtime deps
 RUN pip install -U "huggingface_hub[hf_transfer]" runpod websocket-client librosa
 
 WORKDIR /
