@@ -8,9 +8,9 @@
         "prompt": "A person talking naturally",
         "max_frame": 25,
         "force_offload": false,
-        "network_volume": true
+        "network_volume": false
       },
-      "timeout": 600000
+      "timeout": 1200000
     }
   ],
   "config": {

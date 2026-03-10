@@ -37,7 +37,7 @@ RUN pip install --no-cache-dir torch torchvision torchaudio xformers --index-url
 # flash_attn pre-built for CUDA 12.8 + PyTorch 2.10 + Python 3.10
 # Source: https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.7.16
 RUN pip install --no-cache-dir -U wheel setuptools packaging ninja psutil \
-    misaki[en] "huggingface_hub[hf_transfer]" runpod websocket-client librosa && \
+    misaki[en] "huggingface_hub[hf_transfer]" runpod websocket-client librosa sageattention && \
     pip install --no-cache-dir "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.8.3%2Bcu128torch2.10-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl"
 
 WORKDIR /
@@ -66,5 +66,6 @@ COPY . .
 RUN chmod +x /entrypoint.sh
 
 ENV RUNPOD_PING_INTERVAL=3000
+ENV RUNPOD_INIT_TIMEOUT=600
 
 CMD ["/entrypoint.sh"]
