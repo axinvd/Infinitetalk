@@ -615,6 +615,25 @@ def handler(job):
     else:
         logger.warning("WanVideoSampler node not found, using workflow defaults")
 
+    # Also inject force_offload into the InfiniteTalk node (192 = WanVideoImageToVideoMultiTalk)
+    # which has force_offload: false hardcoded in the workflow JSONs
+    talk_node_id = None
+    preferred_talk_id = "192"
+    if preferred_talk_id in prompt and "MultiTalk" in prompt[preferred_talk_id].get("class_type", ""):
+        talk_node_id = preferred_talk_id
+    else:
+        for node_id, node_data in prompt.items():
+            if "MultiTalk" in node_data.get("class_type", ""):
+                talk_node_id = node_id
+                break
+
+    if talk_node_id:
+        inputs = prompt[talk_node_id].setdefault("inputs", {})
+        inputs["force_offload"] = force_offload
+        logger.info(f"Node {talk_node_id} ({prompt[talk_node_id]['class_type']}) updated: force_offload={force_offload}")
+    else:
+        logger.info("MultiTalk node not found (may not be in this workflow)")
+
     if not os.path.exists(media_path):
         logger.error(f"Media file does not exist: {media_path}")
         return {"error": f"Media file not found: {media_path}"}

@@ -210,7 +210,7 @@
       ],
       "frame_window_size": 81,
       "motion_frame": 9,
-      "force_offload": false,
+      "force_offload": true,
       "colormatch": "disabled",
       "tiled_vae": false,
       "mode": "infinitetalk",
