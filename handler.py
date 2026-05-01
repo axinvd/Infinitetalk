@@ -307,8 +307,8 @@ def get_videos(ws, prompt, input_type="image", person_count="single", job=None):
             try:
                 out = ws.recv()
             except websocket.WebSocketTimeoutException:
-                logger.error("WebSocket recv timed out (120s) — ComfyUI may be unresponsive")
-                raise Exception("WebSocket timeout: no message from ComfyUI for 120 seconds")
+                logger.error("WebSocket recv timed out (600s) — ComfyUI may be unresponsive")
+                raise Exception("WebSocket timeout: no message from ComfyUI for 600 seconds")
             except (websocket.WebSocketConnectionClosedException, ConnectionError) as e:
                 logger.error(f"WebSocket disconnected: {e}")
                 raise Exception(f"WebSocket disconnected: {e}")
@@ -699,7 +699,10 @@ def handler(job):
     for attempt in range(max_attempts):
         try:
             ws.connect(ws_url)
-            ws.settimeout(120)
+            # 600s — accommodates UMT5-XXL text-encoder loading on slow disks /
+            # Ampere GPUs (full T5 load ~5min without ComfyUI-level progress
+            # events, since it's tqdm inside the torch state_dict pass).
+            ws.settimeout(600)
             logger.info(f"WebSocket connected (attempt {attempt+1})")
             break
         except Exception as e:
