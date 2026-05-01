@@ -7,7 +7,6 @@ base.Dockerfile
 .git
 .gitignore
 .claude
-examples
 __pycache__
 *.pyc
 handler_old.py
