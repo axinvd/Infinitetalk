@@ -30,11 +30,13 @@ RUN pip install --no-cache-dir sageattention \
 
 WORKDIR /
 
-# ComfyUI core (strip frontend packages we don't need for headless serverless)
+# ComfyUI core. We keep comfyui-frontend-package — recent ComfyUI (>=0.20)
+# checks for it during startup even in headless mode and exits with an error
+# if missing. Workflow-templates and embedded-docs are still safe to strip.
 RUN git clone https://github.com/comfyanonymous/ComfyUI.git && \
     cd /ComfyUI && \
     pip install --no-cache-dir -r requirements.txt && \
-    pip uninstall -y comfyui-frontend-package comfyui-workflow-templates \
+    pip uninstall -y comfyui-workflow-templates \
         comfyui-workflow-templates-core comfyui-workflow-templates-media-api \
         comfyui-workflow-templates-media-image comfyui-workflow-templates-media-other \
         comfyui-workflow-templates-media-video comfyui-embedded-docs 2>/dev/null || true
