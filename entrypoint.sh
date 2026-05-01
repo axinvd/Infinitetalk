@@ -91,9 +91,12 @@ fi
 echo "Starting ComfyUI in the background..."
 python /ComfyUI/main.py --listen --use-sage-attention &
 
-# Wait for ComfyUI to be ready
+# Wait for ComfyUI to be ready.
+# 900s (15 min) accommodates first-boot custom-node initialization on Ampere
+# (sage-attention JIT compile, WanVideoWrapper imports, ~60-120s after weights
+# are downloaded). Subsequent boots with cached node state are much faster.
 echo "Waiting for ComfyUI to be ready..."
-max_wait=300
+max_wait=900
 wait_count=0
 while [ $wait_count -lt $max_wait ]; do
     if curl -s http://127.0.0.1:8188/ > /dev/null 2>&1; then
