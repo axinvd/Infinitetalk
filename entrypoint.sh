@@ -23,8 +23,8 @@ download_models() {
          -O "$dest/diffusion_models/Wan2_1-InfiniteTalk-Single_fp8_e4m3fn_scaled_KJ.safetensors" &
     wget -q https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/InfiniteTalk/Wan2_1-InfiniteTalk-Multi_fp8_e4m3fn_scaled_KJ.safetensors \
          -O "$dest/diffusion_models/Wan2_1-InfiniteTalk-Multi_fp8_e4m3fn_scaled_KJ.safetensors" &
-    wget -q https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors \
-         -O "$dest/diffusion_models/Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors" &
+    wget -q https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan2_1-I2V-14B-720P_fp8_e4m3fn.safetensors \
+         -O "$dest/diffusion_models/Wan2_1-I2V-14B-720P_fp8_e4m3fn.safetensors" &
     wget -q https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors \
          -O "$dest/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors" &
     wget -q https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan2_1_VAE_bf16.safetensors \
@@ -41,7 +41,7 @@ download_models() {
     for f in \
         "$dest/diffusion_models/Wan2_1-InfiniteTalk-Single_fp8_e4m3fn_scaled_KJ.safetensors" \
         "$dest/diffusion_models/Wan2_1-InfiniteTalk-Multi_fp8_e4m3fn_scaled_KJ.safetensors" \
-        "$dest/diffusion_models/Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors" \
+        "$dest/diffusion_models/Wan2_1-I2V-14B-720P_fp8_e4m3fn.safetensors" \
         "$dest/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors" \
         "$dest/vae/Wan2_1_VAE_bf16.safetensors" \
         "$dest/text_encoders/umt5-xxl-enc-fp8_e4m3fn.safetensors" \

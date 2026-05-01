@@ -10,7 +10,7 @@
   },
   "122": {
     "inputs": {
-      "model": "Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors",
+      "model": "Wan2_1-I2V-14B-720P_fp8_e4m3fn.safetensors",
       "base_precision": "fp16_fast",
       "quantization": "fp8_e4m3fn",
       "load_device": "offload_device",
